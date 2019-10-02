@@ -16,7 +16,8 @@ public class TestRunServer {
             String homedir = System.getProperty("user.home") + "/Downloads/";
             Log.debug("Serving from homedir {}", homedir);
 
-            server = new WebServer(new File(homedir),
+            //server = new WebServer(new File(homedir),
+            server = new WebServer(new File("e:\\dev\\StudioProjects\\gexporter_cues\\app\\src\\test\\resources\\"),
                     new File("/tmp"), 22222, new Gpx2FitOptions());
             server.start();
         } catch (IOException | NoSuchAlgorithmException e) {
