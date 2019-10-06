@@ -519,8 +519,9 @@ public class Gpx2Fit {
 
         if (mGpx2FitOptions.isInjectCoursePoints()) {//compute course points at begin, end and at course intersections
 
-            boolean intersectionCascadeOngoing = false;
-            boolean significantIntersectionFound = false;
+            List<Integer> lastIntersections = new ArrayList<>();
+            List<Integer> currentIntersections = new ArrayList<>();
+            List<Integer> significantIntersections = new ArrayList<>();
 
             for(int currentWpIndex=0; currentWpIndex<wayPoints.size(); currentWpIndex++) {
                 boolean written = false;
@@ -546,7 +547,7 @@ public class Gpx2Fit {
                     written = true;
                 }
 
-                else if (currentWpIndex == wayPoints.size()) {
+                else if (currentWpIndex == wayPoints.size()-1) {
                     cp.setPositionLat(wayPoints.get(currentWpIndex).getLatSemi());
                     cp.setPositionLong(wayPoints.get(currentWpIndex).getLonSemi());
                     cp.setName("End");
@@ -577,15 +578,16 @@ public class Gpx2Fit {
                     double wp4Y = wayPoints.get(currentWpIndex+1).getLon();
 
                     //inner loop over wp list to find intersections
-                    boolean intersectionFound = false;
+
                     for(int testWpIndex=0; testWpIndex<wayPoints.size(); testWpIndex++) {
 
-                        if (currentWpIndex == 617 ){
+/*                        if (currentWpIndex == 617 ){
                             System.out.println("");
-                        }
+                        }*/
 
                         if (testWpIndex > 0) {
 
+                            // ignore test of line segment with itself or neighbours
                             if (testWpIndex == currentWpIndex || testWpIndex == currentWpIndex-1 || testWpIndex == currentWpIndex+1) {
                                 continue;
                             }
@@ -600,111 +602,124 @@ public class Gpx2Fit {
                             Point intersectionPoint = lineIntersect(wp2X, wp2Y, wp3X, wp3Y, testWp1X, testWp1Y, testWp2X, testWp2Y);
 
                             if (intersectionPoint != null) {
-
-                                intersectionFound = true;
                                 //System.out.println("intersection at " + wayPoints.get(currentWpIndex).getTotaldist() + " for segments " + currentWpIndex + " & " + testWpIndex);
-                                break;
+                                currentIntersections.add(testWpIndex);
                             }
                         }
                     }//inner loop over wp list to find intersections
 
-                    if (intersectionFound) {
-                        if (intersectionCascadeOngoing) {
-                            significantIntersectionFound = false;
-                        } else {
-                            intersectionCascadeOngoing = true;
-                            significantIntersectionFound = true;
+                    boolean significantIntersectionFound = false;
+                    boolean endOfIntersectionCascade = false;
+
+                    for (int c:currentIntersections) {
+                        significantIntersectionFound = true;
+                        for (int l:lastIntersections) {
+                            if( Math.abs(c - l) < 10) {
+                                significantIntersectionFound = false;
+                                break;
+                            }
                         }
-                    } else {
-                        if (intersectionCascadeOngoing) {
-                            significantIntersectionFound = true;
-                        } else {
-                            significantIntersectionFound = false;
+                        if (significantIntersectionFound) {
+                            break;
                         }
-                        intersectionCascadeOngoing = false;
+                    }
+
+                    if (significantIntersectionFound == false) {
+                        for (int l:lastIntersections) {
+                            significantIntersectionFound = true;
+                            for (int c:currentIntersections) {
+                                if( Math.abs(c - l) < 10) {
+                                    significantIntersectionFound = false;
+                                    break;
+                                }
+                            }
+                            if (significantIntersectionFound) {
+                                endOfIntersectionCascade = true;
+                                break;
+                            }
+                        }
                     }
 
 
+                    lastIntersections.clear();
+                    lastIntersections.addAll(currentIntersections);
+                    currentIntersections.clear();
+
                     if (significantIntersectionFound) { //write course point
 
-                        int intersectionWpIndex = -1;
-
-                        if (intersectionCascadeOngoing) {
-                            intersectionWpIndex = currentWpIndex;
-
-                        } else {
-                            intersectionWpIndex = currentWpIndex-2;
-
+                        int intersectionWpIndex = currentWpIndex;
+                        if (endOfIntersectionCascade) {
+                            intersectionWpIndex = currentWpIndex - 2;
                         }
 
-                        double sideA = wayPoints.get(intersectionWpIndex).distance(wayPoints.get(intersectionWpIndex-1));
-                        double sideB = wayPoints.get(intersectionWpIndex).distance(wayPoints.get(intersectionWpIndex+1));
-                        double sideC = wayPoints.get(intersectionWpIndex+1).distance(wayPoints.get(intersectionWpIndex-1));
+                        if (significantIntersections.indexOf(intersectionWpIndex) == -1) {
+                            significantIntersections.add(intersectionWpIndex);
 
-                        double cosAngle = ( sideA*sideA + sideB*sideB - sideC*sideC ) / (2*sideA*sideB);
-                        double angleRad = Math.acos(cosAngle);
-                        double angleDeg = Math.toDegrees(angleRad);
+                            double sideA = wayPoints.get(intersectionWpIndex).distance(wayPoints.get(intersectionWpIndex-1));
+                            double sideB = wayPoints.get(intersectionWpIndex).distance(wayPoints.get(intersectionWpIndex+1));
+                            double sideC = wayPoints.get(intersectionWpIndex+1).distance(wayPoints.get(intersectionWpIndex-1));
 
-                        //double position = (wp2X - wp1X) * (wp3Y - wp1Y) - (wp2Y - wp1Y) * (wp3X - wp1X);
+                            double cosAngle = ( sideA*sideA + sideB*sideB - sideC*sideC ) / (2*sideA*sideB);
+                            double angleRad = Math.acos(cosAngle);
+                            double angleDeg = Math.toDegrees(angleRad);
 
-                        //double position = (wp3X - wp2X) * (wp4Y - wp2Y) - (wp3Y - wp2Y) * (wp4X - wp2X);
-
-                        double position = (wayPoints.get(intersectionWpIndex).getLat() - wayPoints.get(intersectionWpIndex-1).getLat())
+                            double position = (wayPoints.get(intersectionWpIndex).getLat() - wayPoints.get(intersectionWpIndex-1).getLat())
                                     * (wayPoints.get(intersectionWpIndex+1).getLon() - wayPoints.get(intersectionWpIndex-1).getLon())
-                                - (wayPoints.get(intersectionWpIndex).getLon() - wayPoints.get(intersectionWpIndex-1).getLon())
+                                    - (wayPoints.get(intersectionWpIndex).getLon() - wayPoints.get(intersectionWpIndex-1).getLon())
                                     * (wayPoints.get(intersectionWpIndex+1).getLat() - wayPoints.get(intersectionWpIndex-1).getLat());
 
 
-                        //classify for turn direction
-                        if(position > 0.0) { //right
-                            if(angleDeg > 170.0) {
-                                cp.setName("straight");
-                                cp.setType(CoursePoint.STRAIGHT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "  STRAIGHT");
-                            } else if(angleDeg > 140.0) {
-                                cp.setName("slight right");
-                                cp.setType(CoursePoint.SLIGHT_RIGHT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "   SLIGHT_RIGHT");
-                            } else if(angleDeg > 56.0) {
-                                cp.setName("right");
-                                cp.setType(CoursePoint.RIGHT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   RIGHT");
-                            }
-                            else {
-                                cp.setName("sharp right");
-                                cp.setType(CoursePoint.SHARP_RIGHT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   SHARP_RIGHT");
-                            }
-                        }//right
-                        else { //left
-                            if(angleDeg > 170.0) {
-                                cp.setName("straight");
-                                cp.setType(CoursePoint.STRAIGHT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "   STRAIGHT");
-                            } else if(angleDeg > 140.0) {
-                                cp.setName("slight left");
-                                cp.setType(CoursePoint.SLIGHT_LEFT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   SLIGHT_LEFT");
-                            } else if(angleDeg > 56.0) {
-                                cp.setName("left");
-                                cp.setType(CoursePoint.LEFT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   LEFT");
-                            }
-                            else {
-                                cp.setName("sharp left");
-                                cp.setType(CoursePoint.SHARP_LEFT);
-                                System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "   SHARP_LEFT");
-                            }
-                        }//left
+                            //classify for turn direction
+                            if(position > 0.0) { //right
+                                if(angleDeg > 170.0) {
+                                    cp.setName("straight");
+                                    cp.setType(CoursePoint.STRAIGHT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "  STRAIGHT");
+                                } else if(angleDeg > 140.0) {
+                                    cp.setName("slight right");
+                                    cp.setType(CoursePoint.SLIGHT_RIGHT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "   SLIGHT_RIGHT");
+                                } else if(angleDeg > 56.0) {
+                                    cp.setName("right");
+                                    cp.setType(CoursePoint.RIGHT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   RIGHT");
+                                }
+                                else {
+                                    cp.setName("sharp right");
+                                    cp.setType(CoursePoint.SHARP_RIGHT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   SHARP_RIGHT");
+                                }
+                            }//right
+                            else { //left
+                                if(angleDeg > 170.0) {
+                                    cp.setName("straight");
+                                    cp.setType(CoursePoint.STRAIGHT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "   STRAIGHT");
+                                } else if(angleDeg > 140.0) {
+                                    cp.setName("slight left");
+                                    cp.setType(CoursePoint.SLIGHT_LEFT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   SLIGHT_LEFT");
+                                } else if(angleDeg > 56.0) {
+                                    cp.setName("left");
+                                    cp.setType(CoursePoint.LEFT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg +  "   LEFT");
+                                }
+                                else {
+                                    cp.setName("sharp left");
+                                    cp.setType(CoursePoint.SHARP_LEFT);
+                                    System.out.println(intersectionWpIndex + "  " + "dist: " + wayPoints.get(intersectionWpIndex).getTotaldist() + "  angle " + angleDeg + "   SHARP_LEFT");
+                                }
+                            }//left
 
 
-                        cp.setPositionLat(wayPoints.get(intersectionWpIndex).getLatSemi());
-                        cp.setPositionLong(wayPoints.get(intersectionWpIndex).getLonSemi());
-                        cp.setDistance((float) dist);
-                        cp.setTimestamp(timestamp);
-                        encode.write(cp);
-                        lcdist = dist;
-                        //written = true;
+                            cp.setPositionLat(wayPoints.get(intersectionWpIndex).getLatSemi());
+                            cp.setPositionLong(wayPoints.get(intersectionWpIndex).getLonSemi());
+                            cp.setDistance((float) dist);
+                            cp.setTimestamp(timestamp);
+                            encode.write(cp);
+                            lcdist = dist;
+                            //written = true;
+                        }//was that course point already written?
                     }//write course point
 
 
